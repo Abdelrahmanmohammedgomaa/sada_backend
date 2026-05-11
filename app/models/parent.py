@@ -12,3 +12,4 @@ class Parent(Base):
 
     # الربط مع جدول الأطفال
     children = relationship("Child", back_populates="parent")
+    

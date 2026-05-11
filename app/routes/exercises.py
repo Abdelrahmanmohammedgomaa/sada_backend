@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, UploadFile, File, HTTPException
 from sqlalchemy.orm import Session
-import os, shutil
+import os, shutil, uuid
 from typing import List, Optional
 from sqlalchemy import func
 
@@ -11,12 +11,11 @@ from app.models.child import Child
 from app.routes.auth import get_current_user
 from app.models.parent import Parent
 from app.schemas.exercise import ExerciseOut
-from app.schemas.progress import ProgressReport, ProgressOut
 
 router = APIRouter(prefix="/exercises", tags=["Exercises"])
 
-UPLOADS_DIR = "uploads"
-os.makedirs(UPLOADS_DIR, exist_ok=True)
+AUDIO_UPLOAD_DIR = "uploads/audio"
+os.makedirs(AUDIO_UPLOAD_DIR, exist_ok=True)
 
 @router.get("/", response_model=List[ExerciseOut])
 def get_exercises(
@@ -29,7 +28,7 @@ def get_exercises(
         query = query.filter(Exercise.category == category)
     return query.all()
 
-@router.post("/submit", response_model=ProgressOut)
+@router.post("/submit")
 async def submit_exercise(
     child_id: int,
     exercise_id: int,
@@ -38,21 +37,26 @@ async def submit_exercise(
     db: Session = Depends(get_db),
     current_user: Parent = Depends(get_current_user)
 ):
+    exercise = db.query(Exercise).filter(Exercise.id == exercise_id).first()
+    if not exercise:
+        raise HTTPException(status_code=404, detail="Exercise not found")
     child = db.query(Child).filter(
         Child.id == child_id, Child.parent_id == current_user.id
     ).first()
     if not child:
         raise HTTPException(status_code=403, detail="Child not found or not owned by parent.")
 
-    filename = f"{child_id}_{exercise_id}_{audio_file.filename}"
-    file_path = os.path.join(UPLOADS_DIR, filename)
+    # Unique audio file logic
+    filename = f"{uuid.uuid4()}_{child_id}_{audio_file.filename}"
+    rel_path = f"audio/{filename}"
+    file_path = os.path.join("uploads", rel_path)
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(audio_file.file, buffer)
 
     progress = Progress(
         child_id=child_id,
         exercise_id=exercise_id,
-        audio_path=file_path,
+        audio_path=rel_path,  # store as relative
         score=score,
         ai_feedback=None
     )
@@ -66,38 +70,56 @@ async def submit_exercise(
 
     db.commit()
     db.refresh(progress)
-    return progress
+    return {
+        "id": progress.id,
+        "child_id": progress.child_id,
+        "exercise_id": progress.exercise_id,
+        "score": progress.score,
+        "audio_path": progress.audio_path,
+        "ai_feedback": progress.ai_feedback,
+        "created_at": progress.created_at
+    }
 
-@router.get("/children/{child_id}/report", response_model=ProgressReport)
+@router.get("/children/{child_id}/report")
 def get_progress_report(
     child_id: int,
     db: Session = Depends(get_db),
     current_user: Parent = Depends(get_current_user)
 ):
-    child = db.query(Child).filter(
-        Child.id == child_id, Child.parent_id == current_user.id
-    ).first()
+    child = db.query(Child).filter(Child.id == child_id, Child.parent_id == current_user.id).first()
     if not child:
         raise HTTPException(status_code=403, detail="Child not found or not owned by parent.")
 
-    progress_qs = db.query(Progress).filter(Progress.child_id == child_id).order_by(Progress.created_at.desc())
+    total_exercises = db.query(Progress).filter(Progress.child_id == child_id).count()
+    avg_score = db.query(func.avg(Progress.score)).filter(Progress.child_id == child_id).scalar() or 0.0
 
-    total_exercises = progress_qs.count()
-    avg_score = progress_qs.filter(Progress.score != None).with_entities(func.avg(Progress.score)).scalar() or 0
+    # Category performance
+    cat_perf = db.query(Exercise.category, func.avg(Progress.score)).\
+        join(Exercise, Progress.exercise_id == Exercise.id).\
+        filter(Progress.child_id == child_id).\
+        group_by(Exercise.category).all()
+    category_performance = {cat.value: round(avg, 2) if avg else 0 for cat, avg in cat_perf}
 
-    last_5 = progress_qs.limit(5).all()
-    last_5_list = []
-    for record in last_5:
-        status = "Passed" if record.score and record.score > 80 else "Failed"
-        last_5_list.append({
-            "exercise_id": record.exercise_id,
-            "score": record.score,
-            "status": status,
-            "created_at": record.created_at
-        })
+    # Recent activity (last 10)
+    ra = db.query(Progress, Exercise).\
+        join(Exercise, Progress.exercise_id == Exercise.id).\
+        filter(Progress.child_id == child_id).\
+        order_by(Progress.created_at.desc()).limit(10).all()
+    recent_activity = [
+        {
+            "exercise_title": e.title,
+            "score": p.score,
+            "date": p.created_at
+        } for p, e in ra
+    ]
 
-    return ProgressReport(
-        total_exercises=total_exercises,
-        average_score=avg_score,
-        recent_exercises=last_5_list
-    )
+    return {
+        "summary": {
+            "total_exercises": total_exercises,
+            "total_stars": child.total_stars,
+            "current_level": child.level,
+            "average_score": round(avg_score, 2)
+        },
+        "category_performance": category_performance,
+        "recent_activity": recent_activity
+    }

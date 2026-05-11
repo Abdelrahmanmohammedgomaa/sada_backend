@@ -1,18 +1,26 @@
-from sqlalchemy import Column, Integer, String, ForeignKey
-from sqlalchemy.orm import relationship  # السطر ده اللي ناقص!
-from app.database import Base
+import os
 
-class Child(Base):
-    __tablename__ = "children"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    age = Column(Integer)
-    gender = Column(String)
-    
-    parent_id = Column(Integer, ForeignKey("parents.id"))
-    
-    # الـ relationship هنا بتعتمد على الـ import اللي فوق
-    parent = relationship("Parent", back_populates="children")
+from dotenv import load_dotenv
+from sqlalchemy import create_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-    
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set")
+
+engine = create_engine(DATABASE_URL)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
+
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+

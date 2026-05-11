@@ -1,1 +1,1 @@
-from . import parent
+from . import parent, child

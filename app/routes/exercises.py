@@ -5,7 +5,7 @@ from typing import List, Optional
 from sqlalchemy import func
 
 from app.database import get_db
-from app.models.exercise import Exercise, ExerciseCategory
+from app.models.exercise import Exercise, ExerciseCategory, ExerciseLevel
 from app.models.progress import Progress
 from app.models.child import Child
 from app.routes.auth import get_current_user
@@ -16,6 +16,53 @@ router = APIRouter(prefix="/exercises", tags=["Exercises"])
 
 AUDIO_UPLOAD_DIR = "uploads/audio"
 os.makedirs(AUDIO_UPLOAD_DIR, exist_ok=True)
+
+@router.post("/seed-exercises", tags=["Development"])
+def seed_exercises(db: Session = Depends(get_db)):
+    sample_exercises = [
+        Exercise(
+            title="Letter S - Apple",
+            description="Practice the S sound in the word 'Apple'.",
+            category=ExerciseCategory.articulation,
+            target_text="Apple",
+            level=ExerciseLevel.beginner
+        ),
+        Exercise(
+            title="Letter B - Ball",
+            description="Practice the B sound in the word 'Ball'.",
+            category=ExerciseCategory.articulation,
+            target_text="Ball",
+            level=ExerciseLevel.beginner
+        ),
+        Exercise(
+            title="Fluency - Counting",
+            description="Practice fluency by counting numbers.",
+            category=ExerciseCategory.fluency,
+            target_text="One, two, three, four, five",
+            level=ExerciseLevel.beginner
+        ),
+        Exercise(
+            title="Sentence - The Big Cat",
+            description="Say the target sentence for articulation.",
+            category=ExerciseCategory.articulation,
+            target_text="The big cat sat.",
+            level=ExerciseLevel.intermediate
+        ),
+        Exercise(
+            title="Fluency - Describe a Picture",
+            description="Describe the scene in the picture.",
+            category=ExerciseCategory.fluency,
+            target_text="Describe the picture",
+            level=ExerciseLevel.advanced
+        ),
+    ]
+    # Prevent duplicates
+    if db.query(Exercise).count() >= 5:
+        return {"detail": "Already seeded or enough exercises exist."}
+
+    db.add_all(sample_exercises)
+    db.commit()
+    return {"detail": "Seeded 5 exercises."}
 
 @router.get("/", response_model=List[ExerciseOut])
 def get_exercises(
@@ -91,14 +138,17 @@ def get_progress_report(
         raise HTTPException(status_code=403, detail="Child not found or not owned by parent.")
 
     total_exercises = db.query(Progress).filter(Progress.child_id == child_id).count()
-    avg_score = db.query(func.avg(Progress.score)).filter(Progress.child_id == child_id).scalar() or 0.0
+    avg_score_val = db.query(func.avg(Progress.score)).filter(Progress.child_id == child_id).scalar()
+    avg_score = round(avg_score_val, 2) if avg_score_val is not None else 0.0
 
-    # Category performance
+    # Category performance (with 0s if no data)
     cat_perf = db.query(Exercise.category, func.avg(Progress.score)).\
         join(Exercise, Progress.exercise_id == Exercise.id).\
         filter(Progress.child_id == child_id).\
         group_by(Exercise.category).all()
-    category_performance = {cat.value: round(avg, 2) if avg else 0 for cat, avg in cat_perf}
+    # Defensive: fill all categories with 0 if missing
+    category_performance = {cat.value: 0.0 for cat in ExerciseCategory}
+    category_performance.update({cat.value: round(avg, 2) if avg else 0.0 for cat, avg in cat_perf})
 
     # Recent activity (last 10)
     ra = db.query(Progress, Exercise).\
@@ -118,7 +168,7 @@ def get_progress_report(
             "total_exercises": total_exercises,
             "total_stars": child.total_stars,
             "current_level": child.level,
-            "average_score": round(avg_score, 2)
+            "average_score": avg_score
         },
         "category_performance": category_performance,
         "recent_activity": recent_activity

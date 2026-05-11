@@ -11,8 +11,8 @@ class Child(Base):
     gender = Column(String)
     
     parent_id = Column(Integer, ForeignKey("parents.id"))
-    
-    # الـ relationship هنا بتعتمد على الـ import اللي فوق
     parent = relationship("Parent", back_populates="children")
 
-    
+    # Gamification fields:
+    total_stars = Column(Integer, default=0)
+    level = Column(Integer, default=1)

@@ -1,19 +1,17 @@
 from fastapi import FastAPI
 from app.database import engine, Base
-from app.routes import auth
-from app.models import parent, child # تأكد إنك ضفت child هنا
+from app.routes import auth, exercises
+from app.models import parent, child, exercise, progress  # <-- Make sure these are imported
 
-# كارييت الجداول
+# Create tables
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="SADA Backend")
 
-# ربط الروتس
+# Register routers
 app.include_router(auth.router)
+app.include_router(exercises.router)
 
 @app.get("/")
 def root():
     return {"message": "Welcome to SADA API"}
-
-
-from app.database import engine, Base

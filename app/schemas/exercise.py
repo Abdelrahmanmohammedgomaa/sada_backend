@@ -18,6 +18,9 @@ class ExerciseOut(BaseModel):
     category: ExerciseCategory
     target_text: str
     level: ExerciseLevel
+    word: str
+    imageName: Optional[str] = None
+    imageUrl: Optional[str] = None
 
     class Config:
         orm_mode = True

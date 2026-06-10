@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, UploadFile, File, Request
 from sqlalchemy.orm import Session
 import os, shutil
 from typing import List, Optional
-from sqlalchemy import func
 
 from app.database import get_db
 from app.models.exercise import Exercise, ExerciseCategory, ExerciseLevel
@@ -28,13 +27,62 @@ from app.utils.responses import success_response, error_response
 router = APIRouter(prefix="/exercises", tags=["Exercises"])
 
 AUDIO_UPLOAD_DIR = "uploads/audio"
+IMAGE_UPLOAD_DIR = "uploads/images"
 os.makedirs(AUDIO_UPLOAD_DIR, exist_ok=True)
+os.makedirs(IMAGE_UPLOAD_DIR, exist_ok=True)
+
+ALLOWED_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5 MB
 
 @router.post("/seed-exercises", tags=["Development"], response_model=dict)
 def seed_exercises(db: Session = Depends(get_db), request: Request = None):
     try:
         sample_exercises = [
-            # ... (unchanged, omitted for brevity)
+            Exercise(
+                title="Say Fish",
+                description="Practice saying fish clearly.",
+                category=ExerciseCategory.articulation,
+                target_text="fish",
+                level=ExerciseLevel.beginner,
+                word="fish",
+                imageName="fish.png",
+            ),
+            Exercise(
+                title="Say Cat",
+                description="Practice saying cat clearly.",
+                category=ExerciseCategory.articulation,
+                target_text="cat",
+                level=ExerciseLevel.beginner,
+                word="cat",
+                imageName="cat.png",
+            ),
+            Exercise(
+                title="Say Sun",
+                description="Practice saying sun clearly.",
+                category=ExerciseCategory.articulation,
+                target_text="sun",
+                level=ExerciseLevel.intermediate,
+                word="sun",
+                imageName="sun.png",
+            ),
+            Exercise(
+                title="Simple Story Retell",
+                description="Repeat short sentences with smooth speech.",
+                category=ExerciseCategory.fluency,
+                target_text="the fish can swim",
+                level=ExerciseLevel.intermediate,
+                word="fish",
+                imageName="story-fish.png",
+            ),
+            Exercise(
+                title="Describe the Picture",
+                description="Describe what you see in one sentence.",
+                category=ExerciseCategory.fluency,
+                target_text="a cat is on the mat",
+                level=ExerciseLevel.advanced,
+                word="cat",
+                imageName="cat-mat.png",
+            ),
         ]
         if db.query(Exercise).count() >= 5:
             app_logger.info("Seed attempted but already present")
@@ -46,6 +94,49 @@ def seed_exercises(db: Session = Depends(get_db), request: Request = None):
     except Exception as e:
         error_logger.error(f"seed_exercises error: {e}")
         return error_response("Failed to seed exercises.")
+
+@router.post("/upload-image", response_model=dict)
+async def upload_exercise_image(
+    image_file: UploadFile = File(...),
+    current_user: Parent = Depends(get_current_user),
+):
+    _ = current_user
+    try:
+        if not image_file.filename:
+            raise FileValidationException("Image filename is required.")
+
+        extension = os.path.splitext(image_file.filename or "")[1].lower()
+        if extension not in ALLOWED_IMAGE_EXTENSIONS:
+            raise FileValidationException("Unsupported image extension.")
+
+        image_file.file.seek(0, os.SEEK_END)
+        size = image_file.file.tell()
+        image_file.file.seek(0)
+        if size > MAX_IMAGE_SIZE:
+            raise FileValidationException("Image is too large. Max size is 5MB.")
+
+        filename = generate_safe_filename(image_file.filename)
+        rel_path = f"images/{filename}"
+        file_path = os.path.join("uploads", rel_path)
+        if os.path.exists(file_path):
+            raise FileValidationException("Duplicate filename error.")
+
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(image_file.file, buffer)
+        upload_logger.info(f"Uploaded image file: {filename}")
+        return success_response(
+            "Image uploaded successfully.",
+            data={
+                "imageName": filename,
+                "imageUrl": f"/uploads/images/{filename}",
+            },
+        )
+    except (APIException, FileValidationException) as e:
+        error_logger.warning(f"/upload-image error: {str(e.detail)}")
+        return error_response(str(e.detail))
+    except Exception as e:
+        error_logger.error(f"upload_exercise_image error: {e}")
+        return error_response("Failed to upload image.")
 
 @router.get("/", response_model=List[ExerciseOut])
 def get_exercises(

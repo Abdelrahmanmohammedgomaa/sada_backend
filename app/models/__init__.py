@@ -1,1 +1,1 @@
-from . import parent, child
+from . import parent, child, exercise, progress

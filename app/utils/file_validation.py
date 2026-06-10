@@ -11,9 +11,6 @@ class FileValidationException(HTTPException):
 def get_secure_filename(filename: str) -> str:
     return os.path.basename(filename).replace(' ', '_')
 
-def generate_safe_filename(filename: str) -> str:
-    return get_secure_filename(filename)
-
 def validate_extension(filename: str):
     ext = os.path.splitext(filename)[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:

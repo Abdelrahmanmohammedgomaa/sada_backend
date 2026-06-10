@@ -13,7 +13,7 @@ from app.schemas.exercise import ExerciseOut
 
 from app.utils.file_validation import (
     validate_extension, validate_file_size, is_valid_audio,
-    generate_safe_filename, FileValidationException
+    get_secure_filename, FileValidationException
 )
 from app.core.exceptions import APIException
 from app.services.analytics_service import (
@@ -98,14 +98,13 @@ def seed_exercises(db: Session = Depends(get_db), request: Request = None):
 @router.post("/upload-image", response_model=dict)
 async def upload_exercise_image(
     image_file: UploadFile = File(...),
-    current_user: Parent = Depends(get_current_user),
+    _: Parent = Depends(get_current_user),
 ):
-    _ = current_user
     try:
         if not image_file.filename:
             raise FileValidationException("Image filename is required.")
 
-        extension = os.path.splitext(image_file.filename or "")[1].lower()
+        extension = os.path.splitext(image_file.filename)[1].lower()
         if extension not in ALLOWED_IMAGE_EXTENSIONS:
             raise FileValidationException("Unsupported image extension.")
 
@@ -115,11 +114,12 @@ async def upload_exercise_image(
         if size > MAX_IMAGE_SIZE:
             raise FileValidationException("Image is too large. Max size is 5MB.")
 
-        filename = generate_safe_filename(image_file.filename)
-        rel_path = f"images/{filename}"
-        file_path = os.path.join("uploads", rel_path)
+        filename = get_secure_filename(image_file.filename)
+        file_path = os.path.join(IMAGE_UPLOAD_DIR, filename)
         if os.path.exists(file_path):
-            raise FileValidationException("Duplicate filename error.")
+            raise FileValidationException(
+                "An image with this filename already exists. Please use a different filename."
+            )
 
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(image_file.file, buffer)
@@ -180,7 +180,7 @@ async def submit_exercise(
         validate_file_size(audio_file)
         is_valid_audio(audio_file)
 
-        filename = generate_safe_filename(audio_file.filename)
+        filename = get_secure_filename(audio_file.filename)
         rel_path = f"audio/{filename}"
         file_path = os.path.join("uploads", rel_path)
         if os.path.exists(file_path):

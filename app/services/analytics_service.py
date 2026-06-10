@@ -37,20 +37,28 @@ def get_monthly_progress(activity):
 def get_strongest_exercise(activity):
     if not activity:
         return None
-    return max(activity, key=lambda item: item.get("score", 0)).get("exercise_id")
+    valid_items = [item for item in activity if item.get("score") is not None]
+    if not valid_items:
+        return None
+    best_item = max(valid_items, key=lambda item: item.get("score", 0))
+    if best_item.get("score", 0) <= 0:
+        return None
+    return best_item.get("exercise_id")
 
 
 def get_weakest_exercise(activity):
     if not activity:
         return None
-    return min(activity, key=lambda item: item.get("score", 0)).get("exercise_id")
+    valid_items = [item for item in activity if item.get("score") is not None]
+    if not valid_items:
+        return None
+    return min(valid_items, key=lambda item: item.get("score", 0)).get("exercise_id")
 
 
 class AnalyticsService:
     @staticmethod
     def get_child_analytics(db, child_id: int):
-        _ = db
-        _ = child_id
+        # TODO: replace placeholder summary with DB-backed analytics.
         return {
             "total_exercises": 0,
             "average_score": 0.0,

@@ -24,6 +24,12 @@ uvicorn app.main:app --reload
 - All uploaded audio files are saved to: `uploads/audio/`
 - Access from the frontend via: `/uploads/audio/<filename>` (e.g. `http://localhost:8000/uploads/audio/yourfile.wav`).
 
+## 🖼️ Exercise Images
+- Exercise images are uploaded via: `POST /exercises/upload-image`
+- Image files are saved to: `uploads/images/`
+- Image URLs are served from: `/uploads/images/<filename>`
+- `GET /exercises/` now returns `word`, `imageName`, and `imageUrl` for each exercise.
+
 
 ## 🌱 Seeding Exercises
 - **Initial Data:**

@@ -1,9 +1,12 @@
 import os
 from fastapi import UploadFile, HTTPException
-from typing import Tuple
 
 ALLOWED_EXTENSIONS = {'.mp3', '.wav', '.m4a'}
 MAX_FILE_SIZE = 5 * 1024 * 1024  # 5 MB
+
+class FileValidationException(HTTPException):
+    def __init__(self, detail: str, status_code: int = 400):
+        super().__init__(status_code=status_code, detail=detail)
 
 def get_secure_filename(filename: str) -> str:
     return os.path.basename(filename).replace(' ', '_')
